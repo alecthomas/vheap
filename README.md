@@ -8,9 +8,12 @@ The implementation is currently very basic, but sufficient for its intended purp
 
 Why would you want to use this?
 
-It is useful for situations where you want very low overhead object creation and tight control over the layout of and access to, data. Its initial use will be as a search index, storing posting lists, document names, scoring information, and so on.
+It is useful for situations where you want very low overhead object creation and tight control over the layout of and access to, data.
+
+Its initial use will be in a search index, storing posting lists, document names, scoring information, and so on.
 
 ## Example
+
 Creating a heap and adding some data:
 
     // Create a heap with an initial size of 32MB.
@@ -20,7 +23,8 @@ Creating a heap and adding some data:
     // Allocate a 32 byte block.
     b, err := h.Allocate(32)
     
-    // Print the blocks persistent ID (the first block is guaranteed to have an ID of 0)
+    // Print the block's persistent ID (the first block is guaranteed to have an ID of 0,
+    // which is useful for storing references to other blocks)
     println(b.Id)
     
     // Copy some text into the block
@@ -48,29 +52,22 @@ A region size is specified at index creation, typically in the order of 32-128MB
 
 The structure at the start of each region is:
 
-    // Region signature
-    signature [8]byte
-    // Pointer to start of free memory:
-    freeListPointer int64
-    // Size, in bytes, of each region, including header and block list.
-    regionSize int64
-    // Region ID, starting at 0.
-    regionId int64
-    // Data
-    data []byte
+    signature [8]byte     // Region signature
+    freeListPointer int64 // Pointer to start of free memory
+    regionSize int64      // Size, in bytes, of each region, including header and block list.
+    regionId int64        // Region ID, starting at 0.
+    data []byte           // Data
 
 The block list is located at the end of each region, growing down:
 
-    // Next free block ID in this region
-    id int64
-    // Array of offset and raw size of allocated blocks.
-    entries []struct{offset, size int64}
+    id int64                             // Next free block ID in this region
+    entries []struct{offset, size int64} // Array of offset and raw size of allocated blocks.
 
 When the top of the heap reaches the bottom of the index, a new region is
 allocated.
 
 ## Concurrent Access
 
-Allocations are (almost) atomic on 64-bit machines. Almost atomic in that free space is allocated first, then the list of block IDs is updated. If termination occurs in between these two operations, free space will be lost, though the heap will remain consistent.
+Allocations are (almost) atomic on 64-bit machines. *Almost atomic* in that free space is allocated first, then the list of block IDs is updated. If termination occurs in between these two operations, free space will be lost, though the heap will remain consistent.
 
 The implication of this consistency is that a storage block can be read from concurrently while being written to by another process, though currently there is no support for automatically opening appended regions in readers. 

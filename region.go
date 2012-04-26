@@ -16,11 +16,11 @@ package vheap
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
 	"syscall"
+	"unsafe"
 )
 
 const (
@@ -39,7 +39,6 @@ const (
 )
 
 var (
-	e                = binary.LittleEndian
 	InvalidSignature = errors.New("Invalid region signature")
 	signature        = []byte("HEAPREGN")
 )
@@ -116,7 +115,7 @@ func (r *region) Allocate(size int64) (*Block, error) {
 
 func (r *region) Free(b *Block) bool {
 	d := r.getBlockListEntryBytes(b.Id)
-	offset, size := int64(e.Uint64(d[:8])), int64(e.Uint64(d[8:16]))
+	offset, size := *(*int64)(unsafe.Pointer(&d[0])), *(*int64)(unsafe.Pointer(&d[8]))
 	if offset == 0 && size == 0 {
 		return false
 	}
@@ -152,7 +151,7 @@ func (r *region) GetBlock(id BlockId) *Block {
 // Internal functions
 func (r *region) rawGetBlock(id BlockId) *Block {
 	d := r.getBlockListEntryBytes(id)
-	offset, size := int64(e.Uint64(d[:8])), int64(e.Uint64(d[8:16]))
+	offset, size := *(*int64)(unsafe.Pointer(&d[0])), *(*int64)(unsafe.Pointer(&d[8]))
 	if offset == 0 || size == 0 {
 		return nil
 	}
@@ -178,8 +177,8 @@ func openRegion(f *os.File, writeable bool, offset int64) (*region, error) {
 	if bytes.Compare(header[:8], signature) != 0 {
 		return nil, InvalidSignature
 	}
-	size := int64(e.Uint64(header[regionSizeOffset : regionSizeOffset+8]))
-	rid := int64(e.Uint64(header[regionId : regionId+8]))
+	size := *(*int64)(unsafe.Pointer(&header[regionSizeOffset]))
+	rid := *(*int64)(unsafe.Pointer(&header[regionId]))
 	flags := syscall.PROT_READ
 	if writeable {
 		flags |= syscall.PROT_WRITE
@@ -210,9 +209,9 @@ func appendRegion(rid int64, f *os.File, regionSizeB int64) (*region, error) {
 	// Initialize header
 	header := make([]byte, regionHeaderSize)
 	copy(header[:8], signature)
-	e.PutUint64(header[regionFreePointerOffset:regionFreePointerOffset+8], regionHeaderSize)
-	e.PutUint64(header[regionSizeOffset:regionSizeOffset+8], uint64(regionSizeB))
-	e.PutUint64(header[regionId:regionId+8], uint64(rid))
+	*(*int64)(unsafe.Pointer(&header[regionFreePointerOffset])) = regionHeaderSize
+	*(*int64)(unsafe.Pointer(&header[regionSizeOffset])) = regionSizeB
+	*(*int64)(unsafe.Pointer(&header[regionId])) = rid
 	if _, err := f.Write(header); err != nil {
 		return nil, err
 	}
@@ -225,31 +224,31 @@ func appendRegion(rid int64, f *os.File, regionSizeB int64) (*region, error) {
 }
 
 func (r *region) getNextFreeBlockId() BlockId {
-	return NewBlockId(r.id, int64(e.Uint64(r.blockListNextIdPtr)))
+	return NewBlockId(r.id, *(*int64)(unsafe.Pointer(&r.blockListNextIdPtr[0])))
 }
 
 func (r *region) setNextFreeBlockId(id BlockId) {
-	e.PutUint64(r.blockListNextIdPtr, uint64(id.BlockId()))
+	*(*int64)(unsafe.Pointer(&r.blockListNextIdPtr[0])) = id.BlockId()
 }
 
 func (r *region) incrementFreeBlockId() BlockId {
 	id := r.getNextFreeBlockId()
-	e.PutUint64(r.blockListNextIdPtr, uint64(id.BlockId()+1))
+	*(*int64)(unsafe.Pointer(&r.blockListNextIdPtr[0])) = id.BlockId() + 1
 	return id
 }
 
 func (r *region) getFreePointer() int64 {
-	return int64(e.Uint64(r.freePtr))
+	return *(*int64)(unsafe.Pointer(&r.freePtr[0]))
 }
 
 func (r *region) setFreePointer(offset int64) {
-	e.PutUint64(r.freePtr, uint64(offset))
+	*(*int64)(unsafe.Pointer(&r.freePtr[0])) = offset
 }
 
 func (r *region) setBlockListEntry(id BlockId, offset, size int64) {
 	d := r.getBlockListEntryBytes(id)
-	e.PutUint64(d[:8], uint64(offset))
-	e.PutUint64(d[8:16], uint64(size))
+	*(*int64)(unsafe.Pointer(&d[0])) = offset
+	*(*int64)(unsafe.Pointer(&d[8])) = size
 }
 
 func (r *region) getBlockListEntryBytes(id BlockId) []byte {
@@ -259,5 +258,5 @@ func (r *region) getBlockListEntryBytes(id BlockId) []byte {
 }
 
 func (r *region) initBlockList() {
-	e.PutUint64(r.blockListNextIdPtr, uint64(0))
+	*(*int64)(unsafe.Pointer(&r.blockListNextIdPtr[0])) = 0
 }

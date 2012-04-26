@@ -73,7 +73,11 @@ func (h *Heap) Close() {
 }
 
 func (h *Heap) Available() int64 {
-	return h.regions[len(h.regions)-1].Available()
+	c := int64(0)
+	for _, r := range h.regions {
+		c += r.Available()
+	}
+	return c
 }
 
 func (h *Heap) GetBlock(id BlockId) *Block {
